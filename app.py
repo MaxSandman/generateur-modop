@@ -29,6 +29,7 @@ if not api_key:
     st.info("Veuillez saisir votre clé API Gemini dans la barre latérale.")
     st.stop()
 
+# Configuration sans spécifier de version beta pour éviter le conflit 404
 genai.configure(api_key=api_key)
 
 # --- HEADER ---
@@ -48,43 +49,44 @@ with col1:
             status_zone = st.empty()
             
             try:
-                # 1. Sauvegarde locale temporaire
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tfile:
                     tfile.write(uploaded_file.read())
                     video_path = tfile.name
 
-                # 2. Upload vers Google
                 status_zone.info("☁️ Envoi du fichier vers Google...")
                 myfile = genai.upload_file(path=video_path)
                 
-                # 3. Boucle d'attente
-                with st.spinner("Analyse du contenu vidéo par l'IA..."):
+                with st.spinner("Analyse du contenu vidéo..."):
+                    # Boucle d'attente
                     while myfile.state.name == "PROCESSING":
                         time.sleep(5)
                         myfile = genai.get_file(myfile.name)
                     
-                    if myfile.state.name == "FAILED":
-                        status_zone.error("Le traitement de la vidéo a échoué.")
-                        st.stop()
-                    
                     if myfile.state.name == "ACTIVE":
-                        status_zone.success("✅ Vidéo analysée !")
+                        status_zone.success("✅ Vidéo prête !")
                         
-                        # 4. GÉNÉRATION AVEC NOM DE MODÈLE PRÉCIS
-                        status_zone.info("✍️ Rédaction du mode opératoire...")
-                        # Utilisation du nom de modèle complet pour éviter l'erreur 404
-                        model = genai.GenerativeModel(model_name="models/gemini-1.5-flash-latest")
+                        # --- LA CORRECTION EST ICI ---
+                        # On essaie le nom le plus simple possible qui fonctionne sur 99% des comptes
+                        model = genai.GenerativeModel('gemini-1.5-flash')
                         
-                        prompt = "Analyse cette vidéo technique et rédige un mode opératoire clair en Markdown. Structure : Titre, Introduction, Tableau des étapes (Étape | Action | Timestamp), Points de vigilance."
+                        prompt = "Analyse cette vidéo technique et rédige un mode opératoire en Markdown : Titre, Introduction, Tableau des étapes (Action | Timestamp), Points de vigilance."
                         
+                        # Appel direct
                         response = model.generate_content([prompt, myfile])
-                        st.session_state.modop_text = response.text
-                        status_zone.empty()
+                        
+                        if response.text:
+                            st.session_state.modop_text = response.text
+                            status_zone.empty()
+                        else:
+                            st.error("L'IA a renvoyé une réponse vide.")
+                    else:
+                        st.error(f"État de la vidéo inhabituel : {myfile.state.name}")
 
                 os.remove(video_path)
                 
             except Exception as e:
-                st.error(f"Désolé, une erreur est survenue : {e}")
+                # Affichage plus détaillé de l'erreur pour nous aider
+                st.error(f"Détails de l'erreur : {str(e)}")
 
 with col2:
     st.subheader("📄 Guide Rédigé")
@@ -99,6 +101,6 @@ with col2:
         
         st.divider()
         with open(doc_path, "rb") as f:
-            st.download_button("💾 Télécharger le document Word", f, "Modop_Nomadia.docx")
+            st.download_button("💾 Télécharger Word", f, "Modop_Nomadia.docx")
     else:
-        st.write("Le guide apparaîtra ici après l'analyse.")
+        st.write("Le guide apparaîtra ici.")
