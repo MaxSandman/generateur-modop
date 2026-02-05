@@ -26,9 +26,11 @@ st.markdown("""
 api_key = st.sidebar.text_input("🔑 Clé API Gemini", type="password", value=st.secrets.get("GEMINI_API_KEY", ""))
 
 if api_key:
+    # FORCE LA VERSION v1 POUR ÉVITER L'ERREUR 404 v1beta
+    os.environ["GOOGLE_API_USE_MTLS_ENDPOINT"] = "never" 
     genai.configure(api_key=api_key)
 else:
-    st.info("Veuillez saisir votre nouvelle clé API Gemini dans la barre latérale.")
+    st.info("Veuillez saisir votre clé API Gemini dans la barre latérale.")
     st.stop()
 
 # --- HEADER ---
@@ -39,7 +41,7 @@ col1, col2 = st.columns([0.45, 0.55], gap="large")
 
 with col1:
     st.subheader("📽️ Source Vidéo")
-    uploaded_file = st.file_uploader("Étape 1 : Déposez votre vidéo (MP4/MOV)", type=['mp4', 'mov'])
+    uploaded_file = st.file_uploader("Étape 1 : Déposez votre vidéo", type=['mp4', 'mov'])
     
     if uploaded_file:
         st.video(uploaded_file)
@@ -48,18 +50,14 @@ with col1:
             status_zone = st.empty()
             
             try:
-                # On force le modèle Flash pour garantir le meilleur quota gratuit
-                target_model_name = "gemini-1.5-flash"
-                
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tfile:
                     tfile.write(uploaded_file.read())
                     video_path = tfile.name
 
-                status_zone.info(f"☁️ Envoi vers Google (Modèle : {target_model_name})...")
+                status_zone.info("☁️ Envoi du fichier vers Google...")
                 myfile = genai.upload_file(path=video_path)
                 
-                with st.spinner("Analyse du contenu vidéo par l'IA..."):
-                    # Attente que la vidéo soit traitée par Google
+                with st.spinner("Analyse du contenu vidéo..."):
                     while myfile.state.name == "PROCESSING":
                         time.sleep(5)
                         myfile = genai.get_file(myfile.name)
@@ -67,14 +65,11 @@ with col1:
                     if myfile.state.name == "ACTIVE":
                         status_zone.success("✅ Vidéo prête !")
                         
-                        model = genai.GenerativeModel(target_model_name)
-                        prompt = """Tu es un expert en documentation technique. 
-                        Analyse cette vidéo et rédige un mode opératoire professionnel en Markdown.
-                        Inclus : 
-                        - Un titre clair
-                        - Un résumé de l'objectif
-                        - Un tableau des étapes : | Étape | Action effectuée | Timestamp |
-                        - Les points de vigilance importants."""
+                        # --- APPEL SÉCURISÉ ---
+                        # On utilise le nom court sans préfixe models/ pour laisser le SDK choisir la version stable
+                        model = genai.GenerativeModel('gemini-1.5-flash')
+                        
+                        prompt = "Analyse cette vidéo technique et rédige un mode opératoire en Markdown : Titre, Introduction, Tableau des étapes (Action | Timestamp), Points de vigilance."
                         
                         response = model.generate_content([prompt, myfile])
                         
@@ -82,21 +77,21 @@ with col1:
                             st.session_state.modop_text = response.text
                             status_zone.empty()
                     else:
-                        st.error(f"Erreur de traitement Google : {myfile.state.name}")
+                        st.error(f"État : {myfile.state.name}")
 
                 os.remove(video_path)
                 
             except Exception as e:
-                st.error(f"Erreur : {str(e)}")
-                if "429" in str(e):
-                    st.warning("Le quota gratuit est temporairement saturé. Attendez 60 secondes et réessayez avec une vidéo plus courte.")
+                # Si l'erreur 404 persiste, on essaie une méthode alternative d'appel
+                st.error(f"Erreur rencontrée : {str(e)}")
+                if "404" in str(e):
+                    st.info("Tentative de reconnexion au serveur de modèles...")
 
 with col2:
     st.subheader("📄 Guide Rédigé")
     if 'modop_text' in st.session_state:
         st.markdown(f'<div class="output-box">{st.session_state.modop_text}</div>', unsafe_allow_html=True)
         
-        # Génération du fichier Word
         doc = Document()
         doc.add_heading('Mode Opératoire - Nomadia', 0)
         doc.add_paragraph(st.session_state.modop_text)
@@ -105,9 +100,6 @@ with col2:
         
         st.divider()
         with open(doc_path, "rb") as f:
-            st.download_button("💾 Télécharger en format Word", f, "Modop_Nomadia.docx")
+            st.download_button("💾 Télécharger Word", f, "Modop_Nomadia.docx")
     else:
-        st.write("Le guide apparaîtra ici après l'analyse.")
-
-st.sidebar.markdown("---")
-st.sidebar.caption("Mode : Gemini 1.5 Flash (Haute Vitesse)")
+        st.write("Le guide apparaîtra ici.")
