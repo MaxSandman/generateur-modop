@@ -26,7 +26,6 @@ st.markdown("""
 api_key = st.sidebar.text_input("🔑 Clé API Gemini", type="password", value=st.secrets.get("GEMINI_API_KEY", ""))
 
 if api_key:
-    # On force la configuration sans passer par les options beta
     genai.configure(api_key=api_key)
 else:
     st.info("Veuillez saisir votre clé API Gemini dans la barre latérale.")
@@ -49,15 +48,20 @@ with col1:
             status_zone = st.empty()
             
             try:
+                # Détection automatique du modèle disponible
+                available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+                # On cherche flash en priorité, sinon pro, sinon le premier de la liste
+                target_model = next((m for m in available_models if '1.5-flash' in m), 
+                                   next((m for m in available_models if 'pro' in m), available_models[0]))
+                
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tfile:
                     tfile.write(uploaded_file.read())
                     video_path = tfile.name
 
-                status_zone.info("☁️ Envoi du fichier vers Google...")
+                status_zone.info(f"☁️ Envoi vers Google (Modèle : {target_model})...")
                 myfile = genai.upload_file(path=video_path)
                 
                 with st.spinner("Analyse du contenu vidéo..."):
-                    # Boucle d'attente
                     while myfile.state.name == "PROCESSING":
                         time.sleep(5)
                         myfile = genai.get_file(myfile.name)
@@ -65,11 +69,7 @@ with col1:
                     if myfile.state.name == "ACTIVE":
                         status_zone.success("✅ Vidéo prête !")
                         
-                        # --- CORRECTION FINALE ---
-                        # On appelle le modèle "gemini-pro-vision" qui est le modèle stable pour la vidéo 
-                        # ou on reste sur flash mais avec un appel nettoyé
-                        model = genai.GenerativeModel('gemini-1.5-flash')
-                        
+                        model = genai.GenerativeModel(target_model)
                         prompt = "Analyse cette vidéo technique et rédige un mode opératoire en Markdown : Titre, Introduction, Tableau des étapes (Action | Timestamp), Points de vigilance."
                         
                         response = model.generate_content([prompt, myfile])
@@ -84,7 +84,7 @@ with col1:
                 
             except Exception as e:
                 st.error(f"Erreur rencontrée : {str(e)}")
-                st.info("Vérifiez que votre clé API est bien valide sur Google AI Studio.")
+                st.info("Astuce : Essayez de régénérer une clé API sur Google AI Studio si le problème persiste.")
 
 with col2:
     st.subheader("📄 Guide Rédigé")
