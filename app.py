@@ -1,16 +1,14 @@
 import streamlit as st
 import google.generativeai as genai
-import cv2
 import os
 import tempfile
 import time
 from docx import Document
-from fpdf import FPDF
 
-# --- CONFIGURATION DE LA PAGE ---
+# --- CONFIGURATION PAGE ---
 st.set_page_config(page_title="Modop Studio by Nomadia", page_icon="🛰️", layout="wide")
 
-# --- STYLE CSS ---
+# --- DESIGN NOMADIA ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
@@ -18,14 +16,13 @@ st.markdown("""
     [data-testid="stSidebar"] { background-color: #002344; }
     [data-testid="stSidebar"] * { color: white !important; }
     h1, h2, h3 { color: #002344 !important; font-weight: 700 !important; }
-    .stButton>button { background: #00D2B4; color: white !important; border-radius: 8px; border: none; font-weight: 600; padding: 0.6rem 1.5rem; transition: 0.3s; width: 100%; }
-    .stButton>button:hover { background-color: #00B5A0; color: white !important; }
-    .output-box { background-color: #F8FAFC; padding: 25px; border-radius: 12px; border: 1px solid #E2E8F0; color: #002344; font-size: 15px; }
-    .stFileUploader { border: 1px solid #E2E8F0; border-radius: 12px; background-color: #F8FAFC; }
+    .stButton>button { background: #00D2B4; color: white !important; border-radius: 8px; border: none; font-weight: 600; padding: 0.6rem 1.5rem; width: 100%; }
+    .stButton>button:disabled { background: #CBD5E1; color: #64748B !important; }
+    .output-box { background-color: #F8FAFC; padding: 25px; border-radius: 12px; border: 1px solid #E2E8F0; color: #002344; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- INITIALISATION API ---
+# --- API ---
 api_key = st.sidebar.text_input("🔑 Clé API Gemini", type="password", value=st.secrets.get("GEMINI_API_KEY", ""))
 
 if not api_key:
@@ -33,62 +30,80 @@ if not api_key:
     st.stop()
 
 genai.configure(api_key=api_key)
-model = genai.GenerativeModel('gemini-1.5-flash')
 
 # --- HEADER ---
 st.markdown("<h1 style='margin-bottom: 0;'>Modop <span style='color:#00D2B4'>Studio</span></h1>", unsafe_allow_html=True)
-st.markdown("<p style='color: #64748B;'>Génération automatique de documentations techniques</p>", unsafe_allow_html=True)
 st.divider()
 
 col1, col2 = st.columns([0.45, 0.55], gap="large")
 
 with col1:
     st.subheader("📽️ Source Vidéo")
-    uploaded_file = st.file_uploader("Sélectionnez votre enregistrement MP4 ou MOV", type=['mp4', 'mov'])
+    uploaded_file = st.file_uploader("Étape 1 : Déposez votre vidéo", type=['mp4', 'mov'])
     
     if uploaded_file:
         st.video(uploaded_file)
-        if st.button("Lancer la rédaction"):
-            with st.spinner("Analyse intelligente en cours..."):
+        
+        # Le bouton de lancement
+        btn_label = "Étape 2 : Lancer la rédaction"
+        if st.button(btn_label):
+            # On utilise un conteneur vide pour afficher les étapes
+            status_zone = st.empty()
+            
+            try:
+                # 1. Sauvegarde locale temporaire
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tfile:
                     tfile.write(uploaded_file.read())
                     video_path = tfile.name
 
-                # Upload vers Google Gemini
-                google_video_file = genai.upload_file(path=video_path)
+                # 2. Upload vers Google
+                status_zone.info("☁️ Envoi du fichier vers Google...")
+                myfile = genai.upload_file(path=video_path)
                 
-                # BOUCLE D'ATTENTE (CORRECTION ERREUR NOTFOUND)
-                while google_video_file.state.name == "PROCESSING":
-                    time.sleep(3)
-                    google_video_file = genai.get_file(google_video_file.name)
-                
-                if google_video_file.state.name == "FAILED":
-                    st.error("Le traitement de la vidéo par Google a échoué.")
-                    st.stop()
+                # 3. BOUCLE DE VÉRIFICATION CRITIQUE
+                # On attend que l'état soit 'ACTIVE'
+                with st.spinner("Analyse du contenu vidéo par l'IA..."):
+                    while myfile.state.name == "PROCESSING":
+                        time.sleep(5)
+                        myfile = genai.get_file(myfile.name)
+                    
+                    if myfile.state.name == "FAILED":
+                        status_zone.error("Le traitement de la vidéo a échoué chez Google.")
+                        st.stop()
+                    
+                    if myfile.state.name == "ACTIVE":
+                        status_zone.success("✅ Vidéo analysée avec succès !")
+                        time.sleep(1) # Petit temps de confort
+                        
+                        # 4. GÉNÉRATION FINALE
+                        status_zone.info("✍️ Rédaction du mode opératoire...")
+                        model = genai.GenerativeModel('gemini-1.5-flash')
+                        prompt = "Analyse cette vidéo technique et rédige un mode opératoire clair en Markdown. Structure : Titre, Introduction, Tableau des étapes (Étape | Action | Timestamp), Points de vigilance."
+                        
+                        response = model.generate_content([prompt, myfile])
+                        st.session_state.modop_text = response.text
+                        status_zone.empty() # On nettoie les messages
 
-                prompt = """Analyse cette vidéo technique et rédige un mode opératoire clair en Markdown. Structure : Titre, Introduction, Tableau des étapes (Étape | Action | Timestamp), Points de vigilance."""
-                
-                response = model.generate_content([prompt, google_video_file])
-                st.session_state.modop_text = response.text
+                # Nettoyage
                 os.remove(video_path)
+                
+            except Exception as e:
+                st.error(f"Désolé, une erreur est survenue : {e}")
 
 with col2:
     st.subheader("📄 Guide Rédigé")
     if 'modop_text' in st.session_state:
         st.markdown(f'<div class="output-box">{st.session_state.modop_text}</div>', unsafe_allow_html=True)
-        st.divider()
-        st.subheader("📥 Exportation")
         
+        # Préparation export Word
         doc = Document()
-        doc.add_heading('Mode Opératoire - Export Automatique', 0)
+        doc.add_heading('Mode Opératoire - Nomadia', 0)
         doc.add_paragraph(st.session_state.modop_text)
-        doc_path = "export.docx"
+        doc_path = "export_modop.docx"
         doc.save(doc_path)
         
+        st.divider()
         with open(doc_path, "rb") as f:
-            st.download_button("💾 Export Word (.docx)", f, "Modop_Nomadia.docx")
+            st.download_button("💾 Télécharger le document Word", f, "Modop_Nomadia.docx")
     else:
-        st.write("Le guide utilisateur apparaîtra ici après l'analyse.")
-
-st.sidebar.markdown("---")
-st.sidebar.caption("Version 1.1 • Correction loop")
+        st.write("Le guide apparaîtra ici après l'étape 2.")
