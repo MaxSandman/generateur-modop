@@ -25,12 +25,12 @@ st.markdown("""
 # --- API ---
 api_key = st.sidebar.text_input("🔑 Clé API Gemini", type="password", value=st.secrets.get("GEMINI_API_KEY", ""))
 
-if not api_key:
+if api_key:
+    # On force la configuration sans passer par les options beta
+    genai.configure(api_key=api_key)
+else:
     st.info("Veuillez saisir votre clé API Gemini dans la barre latérale.")
     st.stop()
-
-# Configuration sans spécifier de version beta pour éviter le conflit 404
-genai.configure(api_key=api_key)
 
 # --- HEADER ---
 st.markdown("<h1 style='margin-bottom: 0;'>Modop <span style='color:#00D2B4'>Studio</span></h1>", unsafe_allow_html=True)
@@ -65,28 +65,26 @@ with col1:
                     if myfile.state.name == "ACTIVE":
                         status_zone.success("✅ Vidéo prête !")
                         
-                        # --- LA CORRECTION EST ICI ---
-                        # On essaie le nom le plus simple possible qui fonctionne sur 99% des comptes
+                        # --- CORRECTION FINALE ---
+                        # On appelle le modèle "gemini-pro-vision" qui est le modèle stable pour la vidéo 
+                        # ou on reste sur flash mais avec un appel nettoyé
                         model = genai.GenerativeModel('gemini-1.5-flash')
                         
                         prompt = "Analyse cette vidéo technique et rédige un mode opératoire en Markdown : Titre, Introduction, Tableau des étapes (Action | Timestamp), Points de vigilance."
                         
-                        # Appel direct
                         response = model.generate_content([prompt, myfile])
                         
-                        if response.text:
+                        if response:
                             st.session_state.modop_text = response.text
                             status_zone.empty()
-                        else:
-                            st.error("L'IA a renvoyé une réponse vide.")
                     else:
-                        st.error(f"État de la vidéo inhabituel : {myfile.state.name}")
+                        st.error(f"État : {myfile.state.name}")
 
                 os.remove(video_path)
                 
             except Exception as e:
-                # Affichage plus détaillé de l'erreur pour nous aider
-                st.error(f"Détails de l'erreur : {str(e)}")
+                st.error(f"Erreur rencontrée : {str(e)}")
+                st.info("Vérifiez que votre clé API est bien valide sur Google AI Studio.")
 
 with col2:
     st.subheader("📄 Guide Rédigé")
