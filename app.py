@@ -1,6 +1,5 @@
 import streamlit as st
 import google.generativeai as genai
-from google.generativeai.types import RequestOptions
 import os
 import tempfile
 import time
@@ -27,6 +26,7 @@ st.markdown("""
 api_key = st.sidebar.text_input("🔑 Clé API Gemini", type="password", value=st.secrets.get("GEMINI_API_KEY", ""))
 
 if api_key:
+    # Configuration ultra-basique pour éviter les erreurs d'arguments
     genai.configure(api_key=api_key)
 else:
     st.info("Veuillez saisir votre clé API Gemini dans la barre latérale.")
@@ -64,19 +64,13 @@ with col1:
                     if myfile.state.name == "ACTIVE":
                         status_zone.success("✅ Vidéo prête !")
                         
-                        # --- LE FIX CRITIQUE : FORCER LA VERSION V1 ---
-                        # On définit explicitement la version stable pour éviter l'erreur 404 de la beta
-                        model = genai.GenerativeModel(
-                            model_name='gemini-1.5-flash'
-                        )
+                        # --- APPEL LE PLUS SIMPLE POSSIBLE ---
+                        # On retire toute fioriture qui pourrait créer une erreur d'argument
+                        model = genai.GenerativeModel('gemini-1.5-flash')
                         
                         prompt = "Analyse cette vidéo technique et rédige un mode opératoire en Markdown : Titre, Introduction, Tableau des étapes (Action | Timestamp), Points de vigilance."
                         
-                        # On ajoute des options de requête pour forcer le canal
-                        response = model.generate_content(
-                            [prompt, myfile],
-                            request_options=RequestOptions(api_version='v1')
-                        )
+                        response = model.generate_content([prompt, myfile])
                         
                         if response:
                             st.session_state.modop_text = response.text
@@ -88,7 +82,6 @@ with col1:
                 
             except Exception as e:
                 st.error(f"Erreur rencontrée : {str(e)}")
-                st.info("Si l'erreur 404 persiste, vérifiez que le modèle 'Gemini 1.5 Flash' est bien listé comme disponible dans votre Google AI Studio.")
 
 with col2:
     st.subheader("📄 Guide Rédigé")
