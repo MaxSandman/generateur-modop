@@ -17,7 +17,7 @@ st.markdown("""
     [data-testid="stSidebar"] * { color: white !important; }
     h1, h2, h3 { color: #002344 !important; font-weight: 700 !important; }
     .stButton>button { background: #00D2B4; color: white !important; border-radius: 8px; border: none; font-weight: 600; padding: 0.6rem 1.5rem; width: 100%; }
-    .stButton>button:disabled { background: #CBD5E1; color: #64748B !important; }
+    .stButton>button:hover { background-color: #00B5A0; color: white !important; border: none; }
     .output-box { background-color: #F8FAFC; padding: 25px; border-radius: 12px; border: 1px solid #E2E8F0; color: #002344; }
     </style>
     """, unsafe_allow_html=True)
@@ -44,10 +44,7 @@ with col1:
     if uploaded_file:
         st.video(uploaded_file)
         
-        # Le bouton de lancement
-        btn_label = "Étape 2 : Lancer la rédaction"
-        if st.button(btn_label):
-            # On utilise un conteneur vide pour afficher les étapes
+        if st.button("Étape 2 : Lancer la rédaction"):
             status_zone = st.empty()
             
             try:
@@ -60,31 +57,30 @@ with col1:
                 status_zone.info("☁️ Envoi du fichier vers Google...")
                 myfile = genai.upload_file(path=video_path)
                 
-                # 3. BOUCLE DE VÉRIFICATION CRITIQUE
-                # On attend que l'état soit 'ACTIVE'
+                # 3. Boucle d'attente
                 with st.spinner("Analyse du contenu vidéo par l'IA..."):
                     while myfile.state.name == "PROCESSING":
                         time.sleep(5)
                         myfile = genai.get_file(myfile.name)
                     
                     if myfile.state.name == "FAILED":
-                        status_zone.error("Le traitement de la vidéo a échoué chez Google.")
+                        status_zone.error("Le traitement de la vidéo a échoué.")
                         st.stop()
                     
                     if myfile.state.name == "ACTIVE":
-                        status_zone.success("✅ Vidéo analysée avec succès !")
-                        time.sleep(1) # Petit temps de confort
+                        status_zone.success("✅ Vidéo analysée !")
                         
-                        # 4. GÉNÉRATION FINALE
+                        # 4. GÉNÉRATION AVEC NOM DE MODÈLE PRÉCIS
                         status_zone.info("✍️ Rédaction du mode opératoire...")
-                        model = genai.GenerativeModel('gemini-1.5-flash')
+                        # Utilisation du nom de modèle complet pour éviter l'erreur 404
+                        model = genai.GenerativeModel(model_name="models/gemini-1.5-flash-latest")
+                        
                         prompt = "Analyse cette vidéo technique et rédige un mode opératoire clair en Markdown. Structure : Titre, Introduction, Tableau des étapes (Étape | Action | Timestamp), Points de vigilance."
                         
                         response = model.generate_content([prompt, myfile])
                         st.session_state.modop_text = response.text
-                        status_zone.empty() # On nettoie les messages
+                        status_zone.empty()
 
-                # Nettoyage
                 os.remove(video_path)
                 
             except Exception as e:
@@ -95,7 +91,6 @@ with col2:
     if 'modop_text' in st.session_state:
         st.markdown(f'<div class="output-box">{st.session_state.modop_text}</div>', unsafe_allow_html=True)
         
-        # Préparation export Word
         doc = Document()
         doc.add_heading('Mode Opératoire - Nomadia', 0)
         doc.add_paragraph(st.session_state.modop_text)
@@ -106,4 +101,4 @@ with col2:
         with open(doc_path, "rb") as f:
             st.download_button("💾 Télécharger le document Word", f, "Modop_Nomadia.docx")
     else:
-        st.write("Le guide apparaîtra ici après l'étape 2.")
+        st.write("Le guide apparaîtra ici après l'analyse.")
