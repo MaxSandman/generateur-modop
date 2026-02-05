@@ -1,5 +1,6 @@
 import streamlit as st
 import google.generativeai as genai
+from google.generativeai.types import RequestOptions
 import os
 import tempfile
 import time
@@ -26,8 +27,6 @@ st.markdown("""
 api_key = st.sidebar.text_input("🔑 Clé API Gemini", type="password", value=st.secrets.get("GEMINI_API_KEY", ""))
 
 if api_key:
-    # FORCE LA VERSION v1 POUR ÉVITER L'ERREUR 404 v1beta
-    os.environ["GOOGLE_API_USE_MTLS_ENDPOINT"] = "never" 
     genai.configure(api_key=api_key)
 else:
     st.info("Veuillez saisir votre clé API Gemini dans la barre latérale.")
@@ -65,13 +64,19 @@ with col1:
                     if myfile.state.name == "ACTIVE":
                         status_zone.success("✅ Vidéo prête !")
                         
-                        # --- APPEL SÉCURISÉ ---
-                        # On utilise le nom court sans préfixe models/ pour laisser le SDK choisir la version stable
-                        model = genai.GenerativeModel('gemini-1.5-flash')
+                        # --- LE FIX CRITIQUE : FORCER LA VERSION V1 ---
+                        # On définit explicitement la version stable pour éviter l'erreur 404 de la beta
+                        model = genai.GenerativeModel(
+                            model_name='gemini-1.5-flash'
+                        )
                         
                         prompt = "Analyse cette vidéo technique et rédige un mode opératoire en Markdown : Titre, Introduction, Tableau des étapes (Action | Timestamp), Points de vigilance."
                         
-                        response = model.generate_content([prompt, myfile])
+                        # On ajoute des options de requête pour forcer le canal
+                        response = model.generate_content(
+                            [prompt, myfile],
+                            request_options=RequestOptions(api_version='v1')
+                        )
                         
                         if response:
                             st.session_state.modop_text = response.text
@@ -82,10 +87,8 @@ with col1:
                 os.remove(video_path)
                 
             except Exception as e:
-                # Si l'erreur 404 persiste, on essaie une méthode alternative d'appel
                 st.error(f"Erreur rencontrée : {str(e)}")
-                if "404" in str(e):
-                    st.info("Tentative de reconnexion au serveur de modèles...")
+                st.info("Si l'erreur 404 persiste, vérifiez que le modèle 'Gemini 1.5 Flash' est bien listé comme disponible dans votre Google AI Studio.")
 
 with col2:
     st.subheader("📄 Guide Rédigé")
