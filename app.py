@@ -1,10 +1,41 @@
 import streamlit as st
-import google.generativeai as genai
-import cv2
-import os
-from docx import Document
-from fpdf import FPDF
-import tempfile
+# ... (tes autres imports)
+
+# --- CONFIGURATION DU DESIGN "STUDIO" ---
+st.set_page_config(page_title="Gemini Modop Studio", layout="wide")
+
+# Injection de CSS pour le look Dark Mode / Professional
+st.markdown("""
+    <style>
+    /* Fond principal sombre */
+    .stApp {
+        background-color: #131314;
+        color: #e3e3e3;
+    }
+    /* Style des zones de dépôt de fichiers */
+    .stFileUploader {
+        background-color: #1e1f20;
+        border: 2px dashed #444746;
+        border-radius: 12px;
+        padding: 20px;
+    }
+    /* Style des boutons (plus arrondis, bleus Google) */
+    .stButton>button {
+        background-color: #004a77;
+        color: #c2e7ff;
+        border-radius: 20px;
+        border: none;
+        padding: 10px 25px;
+    }
+    /* Barre latérale plus foncée */
+    [data-testid="stSidebar"] {
+        background-color: #1e1f20;
+    }
+    </style>
+    """, unsafe_allow_status=True)
+
+st.title("✨ Gemini Modop Studio")
+st.caption("L'intelligence artificielle au service de votre documentation informatique.")
 
 st.set_page_config(page_title="IA Modop Studio", layout="wide")
 
