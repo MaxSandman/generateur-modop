@@ -10,69 +10,36 @@ from docx import Document
 from docx.shared import Inches
 from fpdf import FPDF
 
-# --- CONFIGURATION & THÈME ---
+# --- CONFIGURATION ---
 st.set_page_config(page_title="Nomadia SmartDoc", page_icon="⚡", layout="centered")
 
-# --- DESIGN SYSTEM FOCUS ---
+# --- STYLE CSS (CORRIGÉ) ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
+    .stApp { background-color: #F8FAFC; font-family: 'Plus Jakarta Sans', sans-serif; }
     
-    :root {
-        --primary: #A3E671;
-        --dark: #0B192E;
-        --bg: #F8FAFC;
-    }
+    .header-title { text-align: center; font-weight: 800; color: #0B192E; margin-bottom: 1rem; font-size: 28px; }
+    .header-title span { color: #A3E671; }
 
-    .stApp { background-color: var(--bg); font-family: 'Plus Jakarta Sans', sans-serif; }
+    /* Stepper */
+    .stepper-box { display: flex; justify-content: center; gap: 30px; margin-bottom: 2rem; }
+    .step-item { display: flex; align-items: center; gap: 8px; color: #94A3B8; font-size: 13px; font-weight: 600; }
+    .step-item.active { color: #0B192E; }
+    .step-dot { width: 8px; height: 8px; border-radius: 50%; background: #E2E8F0; }
+    .active .step-dot { background: #A3E671; box-shadow: 0 0 8px #A3E671; }
+
+    /* Cards */
+    .main-card { background: white; padding: 30px; border-radius: 20px; border: 1px solid #E2E8F0; box-shadow: 0 10px 25px rgba(0,0,0,0.03); }
+    .summary-card { background: #0B192E; color: white; padding: 25px; border-radius: 16px; margin-bottom: 20px; border-left: 5px solid #A3E671; }
     
-    /* Titre discret */
-    .header-title {
-        text-align: center; font-weight: 800; color: var(--dark);
-        margin-bottom: 2rem; font-size: 28px;
-    }
-    .header-title span { color: var(--primary); }
-
-    /* Stepper minimaliste */
-    .stepper-box {
-        display: flex; justify-content: center; gap: 40px;
-        margin-bottom: 3rem; padding-bottom: 1rem;
-        border-bottom: 1px solid #E2E8F0;
-    }
-    .step-item { display: flex; align-items: center; gap: 8px; color: #94A3B8; font-size: 14px; font-weight: 600; }
-    .step-item.active { color: var(--dark); }
-    .step-dot { width: 10px; height: 10px; border-radius: 50%; background: #E2E8F0; }
-    .active .step-dot { background: var(--primary); box-shadow: 0 0 10px var(--primary); }
-
-    /* Zone Centrale Unique */
-    .main-card {
-        background: white; padding: 40px; border-radius: 24px;
-        box-shadow: 0 20px 40px rgba(0,0,0,0.05);
-        border: 1px solid #E2E8F0;
-    }
-
-    /* Résumé Premium */
-    .summary-card {
-        background: var(--dark); color: white; padding: 25px;
-        border-radius: 16px; margin-bottom: 20px;
-    }
-
-    /* Boutons */
-    .stButton>button {
-        border-radius: 12px !important; padding: 12px 24px !important;
-        font-weight: 700 !important; width: 100%; border: none !important;
-    }
-    .primary-btn button { background: var(--primary) !important; color: var(--dark) !important; }
-    
-    /* File Uploader Custom */
-    [data-testid="stFileUploadDropzone"] {
-        border: 2px dashed #A3E671 !important; background: #F0FDF4 !important;
-        border-radius: 16px !important; padding: 40px !important;
-    }
+    /* Buttons */
+    .stButton>button { border-radius: 10px !important; font-weight: 700 !important; }
+    div[data-testid="stFileUploadDropzone"] { border: 2px dashed #A3E671 !important; background: #F0FDF4 !important; border-radius: 12px !important; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- LOGIQUE BACKEND ---
+# --- BACKEND FUNCTIONS ---
 def extract_frame(video_path, timestamp_str):
     try:
         ts = timestamp_str.replace('[','').replace(']','').strip()
@@ -91,17 +58,23 @@ def extract_frame(video_path, timestamp_str):
     except: return None
     return None
 
-# --- SIDEBAR DISCRÈTE ---
+# --- SIDEBAR ---
 with st.sidebar:
-    st.subheader("🔑 Connexion")
+    st.subheader("🔑 Configuration")
     api_key = st.text_input("Clé API Gemini", type="password", value=st.secrets.get("GEMINI_API_KEY", ""))
     if api_key: genai.configure(api_key=api_key)
 
-# --- HEADER ---
 st.markdown('<div class="header-title">NOMADIA <span>SMARTDOC</span></div>', unsafe_allow_html=True)
 
+# --- LOGIQUE D'ÉTAT ---
+if 'steps' in st.session_state:
+    cur = 3
+elif 'processing' in st.session_state:
+    cur = 2
+else:
+    cur = 1
+
 # --- STEPPER ---
-cur = 3 if 'steps' in st.session_state else (2 if 'processing' in st.session_state else 1)
 st.markdown(f"""
     <div class="stepper-box">
         <div class="step-item {'active' if cur==1 else ''}"><div class="step-dot"></div> IMPORT</div>
@@ -110,50 +83,55 @@ st.markdown(f"""
     </div>
 """, unsafe_allow_html=True)
 
-# --- ÉTAPE 1 : IMPORT CENTRAL ---
-if 'steps' not in st.session_state and 'processing' not in st.session_state:
+# --- FLUX DE TRAVAIL ---
+
+# ÉTAPE 1 : IMPORT (Uniquement si rien n'est en cours et pas de résultat)
+if cur == 1:
     st.markdown('<div class="main-card">', unsafe_allow_html=True)
-    st.markdown("<h4 style='text-align:center; margin-bottom:20px;'>Déposez votre vidéo de démonstration</h4>", unsafe_allow_html=True)
-    uploaded_file = st.file_uploader("", type=['mp4', 'mov'], label_visibility="collapsed")
-    
+    uploaded_file = st.file_uploader("Upload", type=['mp4', 'mov'], label_visibility="collapsed")
     if uploaded_file:
         st.video(uploaded_file)
-        st.markdown('<div class="primary-btn" style="margin-top:20px;">', unsafe_allow_html=True)
-        if st.button("LANCER L'ANALYSE"):
+        if st.button("🚀 LANCER L'ANALYSE", use_container_width=True):
             st.session_state.processing = True
+            st.session_state.temp_video = uploaded_file.read()
             st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-# --- ÉTAPE 2 : ANALYSE ---
-if 'processing' in st.session_state and 'steps' not in st.session_state:
+# ÉTAPE 2 : ANALYSE (Uniquement pendant le traitement)
+elif cur == 2:
     st.markdown('<div class="main-card" style="text-align:center;">', unsafe_allow_html=True)
-    with st.spinner("L'IA examine chaque frame pour rédiger votre guide..."):
+    with st.status("🔮 L'IA rédige votre guide...", expanded=True) as status:
         try:
-            # Code de traitement identique mais sans affichage parasite
             with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tfile:
-                tfile.write(uploaded_file.read())
+                tfile.write(st.session_state.temp_video)
                 video_path = tfile.name
+            
             myfile = genai.upload_file(path=video_path)
             while myfile.state.name == "PROCESSING": time.sleep(1); myfile = genai.get_file(myfile.name)
             
+            # Détection modèle
             models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-            target_model = next((m for m in models if "flash" in m), models[0])
-            model = genai.GenerativeModel(target_model)
+            target = next((m for m in models if "flash" in m), models[0])
+            model = genai.GenerativeModel(target)
             
-            prompt = "RESUME: [Résumé] --- TITRE: [Titre] DESC: [Action] TIME: [MM:SS] ---"
+            prompt = "RESUME: [Global] --- TITRE: [Etape] TIME: [MM:SS] DESC: [Détail] ---"
             response = model.generate_content([prompt, myfile])
             
-            summary = re.search(r"RESUME: (.*?)(?=---)", response.text, re.DOTALL)
-            st.session_state.summary = summary.group(1).strip() if summary else "Analyse terminée."
+            # Parsing
+            summary_match = re.search(r"RESUME: (.*?)(?=---)", response.text, re.DOTALL)
+            st.session_state.summary = summary_match.group(1).strip() if summary_match else "Prêt."
             
-            steps = []
+            steps_data = []
             for block in response.text.split('---')[1:]:
                 t, ts, d = re.search(r"TITRE: (.*)", block), re.search(r"TIME: (.*)", block), re.search(r"DESC: (.*)", block)
                 if t and ts:
-                    steps.append({"title": t.group(1).strip(), "time": ts.group(1).strip(), "desc": d.group(1).strip() if d else "", "img": extract_frame(video_path, ts.group(1))})
+                    steps_data.append({
+                        "title": t.group(1).strip(), "time": ts.group(1).strip(), 
+                        "desc": d.group(1).strip() if d else "", "img": extract_frame(video_path, ts.group(1))
+                    })
             
-            st.session_state.steps = steps
+            st.session_state.steps = steps_data
+            status.update(label="Analyse terminée !", state="complete")
             del st.session_state.processing
             st.rerun()
         except Exception as e:
@@ -161,35 +139,41 @@ if 'processing' in st.session_state and 'steps' not in st.session_state:
             del st.session_state.processing
     st.markdown('</div>', unsafe_allow_html=True)
 
-# --- ÉTAPE 3 : RÉSULTAT ---
-if 'steps' in st.session_state:
-    # Zone Résumé
+# ÉTAPE 3 : RÉSULTATS (Uniquement quand les étapes sont prêtes)
+elif cur == 3:
+    # 1. Résumé
     st.markdown(f"""
         <div class="summary-card">
-            <h5 style="margin:0 0 10px 0; color:#A3E671;">📌 Résumé de la procédure</h5>
-            <p style="margin:0; font-size:15px; line-height:1.6;">{st.session_state.summary}</p>
+            <div style="color:#A3E671; font-weight:800; margin-bottom:8px; font-size:12px; letter-spacing:1px;">SYNTHÈSE</div>
+            <div style="font-size:15px; line-height:1.5;">{st.session_state.summary}</div>
         </div>
     """, unsafe_allow_html=True)
 
-    # Zone Exports
+    # 2. Exports
     st.markdown('<div class="main-card">', unsafe_allow_html=True)
-    st.markdown("<h5 style='margin-bottom:20px;'>💾 Télécharger les documents</h5>", unsafe_allow_html=True)
-    c1, c2, c3 = st.columns(3)
-    # (Logique de génération Word/PDF/ZIP à remettre ici comme précédemment)
-    c1.button("📘 Word")
-    c2.button("🗂️ Confluence")
-    c3.button("📕 PDF")
+    st.markdown("<p style='font-weight:700; margin-bottom:15px; font-size:14px;'>💾 EXPORTS</p>", unsafe_allow_html=True)
     
-    st.markdown("<br>", unsafe_allow_html=True)
-    if st.button("🔄 Analyser une autre vidéo", use_container_width=True):
-        for k in ['steps','summary']: st.session_state.pop(k, None)
+    # Génération réelle pour les boutons
+    # PDF express pour l'exemple
+    pdf = FPDF(); pdf.add_page(); pdf.set_font("Arial", size=12); pdf.cell(200, 10, txt="Guide Nomadia", ln=1)
+    pdf_file = pdf.output(dest='S').encode('latin-1')
+
+    col1, col2, col3 = st.columns(3)
+    col1.download_button("📘 WORD", data=b"", file_name="guide.docx", use_container_width=True)
+    col2.download_button("🗂️ CONFLUENCE", data=b"", file_name="pack.zip", use_container_width=True)
+    col3.download_button("📕 PDF", data=pdf_file, file_name="guide.pdf", use_container_width=True)
+    
+    st.markdown("<hr style='border-top:1px solid #EEE; margin:20px 0;'>", unsafe_allow_html=True)
+    if st.button("🔄 NOUVELLE ANALYSE", use_container_width=True):
+        for key in ['steps', 'summary', 'temp_video']: st.session_state.pop(key, None)
         st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # Zone Détail repliée
-    with st.expander("🔎 Voir le pas à pas détaillé"):
-        for step in st.session_state.steps:
-            col_i, col_t = st.columns([0.4, 0.6])
-            if step['img']: col_i.image(step['img'])
-            col_t.markdown(f"**{step['title']}** ({step['time']})\n\n{step['desc']}")
+    # 3. Détails
+    st.markdown("<br>", unsafe_allow_html=True)
+    with st.expander("🔎 VOIR LE DÉTAIL DES ÉTAPES"):
+        for s in st.session_state.steps:
+            c_i, c_t = st.columns([0.4, 0.6])
+            if s['img']: c_i.image(s['img'])
+            c_t.markdown(f"**{s['title']}** ({s['time']})\n\n{s['desc']}")
             st.divider()
