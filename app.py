@@ -64,7 +64,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- FONCTION EXTRACTION ---
+# --- FONCTION EXTRACTION IMAGE ---
 def extract_frame(video_path, timestamp_str):
     try:
         ts = timestamp_str.replace('[','').replace(']','').strip()
@@ -84,7 +84,7 @@ def extract_frame(video_path, timestamp_str):
     except: return None
     return None
 
-# --- API ---
+# --- CONFIGURATION API ---
 api_key = st.sidebar.text_input("🔑 Clé API", type="password", value=st.secrets.get("GEMINI_API_KEY", ""))
 if api_key: 
     genai.configure(api_key=api_key)
@@ -148,26 +148,44 @@ if 'processing' in st.session_state and 'steps' not in st.session_state:
             myfile = genai.get_file(myfile.name)
         progress_bar.progress(50)
         
-        status_text.markdown("**Connexion au moteur IA...**")
+        # --- DÉTECTION DYNAMIQUE DU MODÈLE (FIX 404) ---
+        status_text.markdown("**Sélection du meilleur moteur IA...**")
+        
+        # On liste tous les modèles disponibles pour votre clé
         available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        target_model = "models/gemini-1.5-flash"
+        
+        # On cherche d'abord la version standard, sinon n'importe quel flash
+        target_model = None
         for m in available_models:
             if "gemini-1.5-flash" in m:
                 target_model = m
                 break
+        
+        if not target_model:
+            for m in available_models:
+                if "flash" in m:
+                    target_model = m
+                    break
+        
+        if not target_model:
+            target_model = available_models[0] # Fallback ultime
 
         model = genai.GenerativeModel(target_model)
         
-        prompt = """Tu es un expert chez Nomadia. Analyse cette vidéo.
-        1. Commence par RESUME: [Décris ici la procédure globale en 3 phrases max].
-        2. Ensuite chaque étape : TITRE: [Nom] DESC: [Action précise] TIME: [MM:SS] Séparateur: ---"""
+        prompt = """Tu es un expert technique chez Nomadia. Analyse cette vidéo démonstrative.
+        1. Commence impérativement par un bloc RESUME: [Décris ici la procédure globale en 3 phrases max].
+        2. Détaille ensuite chaque étape avec ce format strict :
+        TITRE: [Nom de l'action]
+        DESC: [Explication précise]
+        TIME: [MM:SS]
+        Séparateur: ---"""
         
         response = model.generate_content([prompt, myfile])
         progress_bar.progress(80)
         
-        # Parsing Résumé & Etapes
+        # Parsing Résumé & Étapes
         summary_match = re.search(r"RESUME: (.*?)(?=---)", response.text, re.DOTALL)
-        st.session_state.summary = summary_match.group(1).strip() if summary_match else "Résumé indisponible."
+        st.session_state.summary = summary_match.group(1).strip() if summary_match else "Résumé non détecté."
         
         steps_list = []
         for block in response.text.split('---'):
@@ -188,7 +206,7 @@ if 'processing' in st.session_state and 'steps' not in st.session_state:
         st.rerun()
 
     except Exception as e:
-        st.error(f"Erreur lors de l'analyse : {str(e)}")
+        st.error(f"Erreur d'analyse : {str(e)}")
         if 'processing' in st.session_state:
             del st.session_state.processing
 
@@ -198,6 +216,7 @@ if 'steps' in st.session_state:
     st.markdown('<div class="zone-title">📋 Synthèse de la procédure</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="summary-box"><strong>📌 Résumé IA :</strong><br>{st.session_state.summary}</div>', unsafe_allow_html=True)
     
+    # Chemins temporaires
     doc_path = "Nomadia_Guide.docx"
     zip_path = "Nomadia_Confluence.zip"
     pdf_path = "Nomadia_Guide.pdf"
@@ -205,7 +224,7 @@ if 'steps' in st.session_state:
     # Export Word
     doc = Document()
     doc.add_heading('Nomadia SmartDoc', 0)
-    doc.add_heading('Résumé', level=1)
+    doc.add_heading('Résumé de la démonstration', level=1)
     doc.add_paragraph(st.session_state.summary)
     for s in st.session_state.steps:
         doc.add_heading(f"{s['title']} ({s['time']})", level=2)
@@ -217,7 +236,7 @@ if 'steps' in st.session_state:
 
     # Export Confluence (ZIP)
     with zipfile.ZipFile(zip_path, 'w') as zipf:
-        txt_content = f"h1. Guide Nomadia\n\n{{note}}{st.session_state.summary}{{note}}\n\n"
+        txt_content = f"h1. Guide d'utilisation Nomadia\n\n{{note}}{st.session_state.summary}{{note}}\n\n"
         for i, s in enumerate(st.session_state.steps):
             img_name = f"etape_{i+1}.jpg"
             txt_content += f"h2. {s['title']} ({s['time']})\n!{img_name}|width=500!\n{s['desc']}\n\n"
@@ -230,10 +249,10 @@ if 'steps' in st.session_state:
     pdf.add_page()
     pdf.set_font("Arial", 'B', 16)
     pdf.cell(0, 10, "NOMADIA SMARTDOC", ln=True, align='C')
+    pdf.ln(5)
     pdf.set_font("Arial", '', 11)
-    pdf.ln(5)
-    pdf.multi_cell(0, 8, f"RESUME:\n{st.session_state.summary}")
-    pdf.ln(5)
+    pdf.multi_cell(0, 8, f"SYNTHÈSE :\n{st.session_state.summary}")
+    pdf.ln(10)
     for i, s in enumerate(st.session_state.steps):
         pdf.set_font("Arial", 'B', 12)
         pdf.cell(0, 10, f"{i+1}. {s['title']} ({s['time']})", ln=True)
@@ -248,15 +267,15 @@ if 'steps' in st.session_state:
     st.markdown('<div class="zone-title">💾 Exporter le résultat</div>', unsafe_allow_html=True)
     c1, c2, c3 = st.columns(3)
     with c1: 
-        with open(doc_path, "rb") as f: st.download_button("📘 Word", f, doc_path)
+        with open(doc_path, "rb") as f: st.download_button("📘 Télécharger Word", f, doc_path)
     with c2: 
-        with open(zip_path, "rb") as f: st.download_button("🗂️ Pack Confluence", f, zip_path)
+        with open(zip_path, "rb") as f: st.download_button("🗂️ Pack Confluence (.zip)", f, zip_path)
     with c3: 
-        with open(pdf_path, "rb") as f: st.download_button("📕 PDF", f, pdf_path)
+        with open(pdf_path, "rb") as f: st.download_button("📕 Télécharger PDF", f, pdf_path)
     
     st.markdown('</div>', unsafe_allow_html=True)
 
-    with st.expander("🔎 Voir le détail des étapes"):
+    with st.expander("🔎 Voir le détail des étapes et images"):
         for step in st.session_state.steps:
             img_col, txt_col = st.columns([0.3, 0.7])
             with img_col: 
@@ -264,7 +283,7 @@ if 'steps' in st.session_state:
             with txt_col: st.markdown(f"**{step['title']}** ({step['time']})\n\n{step['desc']}")
             st.divider()
     
-    if st.button("🔄 Nouvelle analyse"):
+    if st.button("🔄 Analyser une autre vidéo"):
         for k in ['steps','processing','summary']: 
             if k in st.session_state: del st.session_state[k]
         st.rerun()
